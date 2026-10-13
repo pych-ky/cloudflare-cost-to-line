@@ -79,6 +79,12 @@ Queue と Consumer の接続はダッシュボードで管理します。固定�
 
 R2 作成イベントの通知は日次料金集計から独立し、同じ受信日に複数のバケットが作成されても最初の1件だけを通知します。受信日は `TIME_ZONE` で区切ります。オブジェクトの大量利用・契約変更・全製品の操作監視や、自動停止には対応しません。作成から LINE 到着までの即時性は保証しません。Queues の無料枠は [1日10,000操作、メッセージ保持24時間](https://developers.cloudflare.com/queues/platform/pricing/)です。メッセージ1件の書き込み・読み込み・削除は通常3操作を使い、再試行でも操作を消費します。
 
+## 手動で料金を通知する
+
+GitHub Actions → **Send cost notification now** → **Run workflow** で `main` を実行します。`production` の設定を使って現在の料金を取得し、「手動実行」と付けて LINE に送ります。実行するたびに通知され、日次通知の送信済み判定には影響しません。
+
+GitHub 上で日次と同じ料金判定処理を実行するため、デプロイ済み Worker や Cron の動作確認とは別です。Actions の成功は LINE API の受理を表し、料金の取得状態は通知本文で確認します。
+
 ## ローカルでの確認
 
 - `npm run check`：TypeScript の型チェック。
