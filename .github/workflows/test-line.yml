@@ -1,0 +1,62 @@
+name: Test LINE connection
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-line-test
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Send one test notification
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_RECIPIENT_ID: ${{ secrets.LINE_RECIPIENT_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          const token = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
+          const recipient = process.env.LINE_RECIPIENT_ID?.trim();
+          if (!token || !/^[UCR][a-f0-9]{32}$/i.test(recipient ?? "")) {
+            console.error("LINE の送信設定が不足、または形式が不正です。");
+            process.exitCode = 1;
+          } else {
+            try {
+              const response = await fetch("https://api.line.me/v2/bot/message/push", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                  "X-Line-Retry-Key": crypto.randomUUID(),
+                },
+                body: JSON.stringify({
+                  to: recipient,
+                  messages: [{
+                    type: "text",
+                    text: `Cloudflare 料金通知の接続テスト\nこのメッセージは送信設定の確認用です。\n送信日時: ${new Date().toISOString()} (UTC)`,
+                  }],
+                }),
+                signal: AbortSignal.timeout(10_000),
+              });
+              if (response.status === 200) {
+                console.log("LINE がテスト通知を受理しました。端末への到着を確認してください。");
+              } else {
+                console.error(`LINE のテスト送信に失敗しました。HTTP ${response.status}`);
+                process.exitCode = 1;
+              }
+            } catch {
+              console.error("LINE のテスト送信中に通信エラーが発生しました。");
+              process.exitCode = 1;
+            }
+          }
+          NODE
