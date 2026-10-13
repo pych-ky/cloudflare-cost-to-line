@@ -60,7 +60,7 @@ export function forecastMonthlyCost(
     recentTotal += day.amountUsd;
   }
   if (recentTotal === 0) {
-    return { ...result, unavailableReason: "直近7日の計上額は0ドル。今後の無料枠超過を予測できません" };
+    return { ...result, unavailableReason: "直近7日が0ドルで、無料枠超過を予測できません" };
   }
 
   const remainingDays = Math.max(0, Math.round((end - Math.max(start, latest + DAY_MS)) / DAY_MS));

@@ -19,13 +19,14 @@ export async function getDailyMessage(
     const notCovered = billingError?.kind === 'not-covered';
     return [
       `Cloudflare ${localDate(scheduledTime, env.TIME_ZONE)} 料金`,
-      `状態: ${notCovered ? '料金データの提供対象外' : '料金データ取得エラー'}`,
-      '計上済み従量料金: 未確認（0ドルとは判定できません）',
-      '月末予測: 料金データを取得できないため保留',
-      `理由: ${billingError?.message ?? '料金の取得・集計処理に失敗しました。Bot の設定とログを確認してください。'}`,
+      '',
+      '料金を確認できませんでした。',
+      '0ドルかどうかは不明です。',
+      '',
+      `理由: ${notCovered ? 'このアカウントは料金APIの対象外です。' : billingError?.message ?? '料金の取得・集計に失敗しました。'}`,
       notCovered
-        ? 'Cloudflare の請求画面で確認してください。次回の定期通知で対象判定を再確認します。'
-        : 'Cloudflare の請求画面と Bot の料金参照設定を確認してください。次回の定期通知で再取得します。',
+        ? '確認先: Cloudflare の請求画面'
+        : '確認先: Cloudflare の請求画面・Bot の料金参照設定',
     ].join('\n');
   }
 }
