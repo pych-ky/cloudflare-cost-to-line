@@ -18,7 +18,7 @@ async function notify() {
   }
   const now = Date.now();
   const executionTime = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: env.TIME_ZONE, dateStyle: "short", timeStyle: "medium",
+    timeZone: env.TIME_ZONE, dateStyle: "short", timeStyle: "short",
   }).format(now);
   let text;
   for (let attempts = 0; attempts < 3; attempts++) {
@@ -31,7 +31,7 @@ async function notify() {
       await delay(60_000 * 2 ** attempts);
     }
   }
-  const message = `【手動実行】${executionTime} (${env.TIME_ZONE})\n${text}`;
+  const message = `【手動実行】${executionTime} (${env.TIME_ZONE})\n\n${text}`;
   const retryKey = crypto.randomUUID();
   for (let attempts = 0; attempts < 3; attempts++) {
     const result = await pushMessage(token, recipient, message, retryKey);

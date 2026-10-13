@@ -219,24 +219,31 @@ export async function getMonthlyReport(
   const hasMonthlyData = rows.some((row) => row.start >= monthStart.getTime() && row.end <= Math.min(monthEnd.getTime(), Math.floor(now.getTime() / DAY_MS) * DAY_MS));
   const lines = [
     `Cloudflare ${period} 料金`,
-    `状態: ${!hasMonthlyData ? "当月の料金データなし" : !forecast.recordedComplete ? "料金データに欠測あり" : forecast.recordedUsd === 0 ? "計上済み従量料金は0ドル" : "料金データ取得済み"}`,
-    !hasMonthlyData
-      ? "計上済み従量料金: 未確認（0ドルとは判定できません）"
-      : `${forecast.recordedComplete ? "計上済み従量料金" : "取得できた従量料金の小計"}: ${usd(forecast.recordedUsd)}`,
-    forecast.estimatedUsd === null
-      ? `月末予測: 保留（${forecast.unavailableReason}）`
-      : `月末予測: 約 ${usd(forecast.estimatedUsd + fixedMonthlyCostUsd)}`,
-    `データ対象: ${forecast.dataThrough ?? "データなし"}${forecast.dataThrough ? " UTC まで" : ""}`,
+    "",
   ];
-  if (hasMonthlyData && !forecast.recordedComplete) {
-    lines.push("欠測分を含む従量料金の総額は未確認です。");
+  if (!hasMonthlyData) {
+    lines.push("料金を確認できませんでした。", "0ドルかどうかは不明です。", "", "理由: 当月の料金データがありません。");
+  } else if (!forecast.recordedComplete) {
+    lines.push("当月の料金総額は不明です。", "理由: 日別データに欠測があります。", "", `取得分の小計: ${usd(forecast.recordedUsd)}`);
+  } else {
+    lines.push(`確認できた料金: ${usd(forecast.recordedUsd)}`);
+  }
+  if (forecast.dataThrough) {
+    lines.push(`データ対象: ${forecast.dataThrough} UTC まで`);
+  }
+  if (forecast.estimatedUsd !== null) {
+    lines.push("", `月末予測: 約 ${usd(forecast.estimatedUsd + fixedMonthlyCostUsd)}`);
+  } else if (forecast.recordedComplete) {
+    lines.push("", "月末予測: 保留", `理由: ${forecast.unavailableReason}`);
   }
   if (fixedMonthlyCostUsd > 0) {
-    lines.push(`設定した固定月額: ${usd(fixedMonthlyCostUsd)}${forecast.estimatedUsd === null ? "" : " (予測に1回加算)"}`);
+    lines.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}${forecast.estimatedUsd === null ? "" : " (予測に含む)"}`);
   }
-  lines.push("計上額は取得済みの従量料金です。未反映の利用・固定費・税などは含みません。");
+  if (hasMonthlyData) {
+    lines.push("", "※計上額は従量料金のみ。未反映分・固定費・税等を除きます。");
+  }
   if (forecast.estimatedUsd !== null) {
-    lines.push("月末予測は直近7日からの概算。無料枠超過・税・クレジットは予測に未反映。");
+    lines.push("※予測は概算です。無料枠超過・税・クレジットは未反映。");
   }
   return { period, message: lines.join("\n") };
 }
