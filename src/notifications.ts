@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { BillingError, getBudgetSpends, getMonthlyReport } from './billing';
 import { billingOptions, localDate, usdSetting, type Env } from './config';
 import { pushMessage } from './line';
+import type { R2BucketCreated } from './security-events';
 
 interface Delivery {
   id: string;
@@ -13,12 +14,13 @@ interface Delivery {
 }
 
 interface Job {
-  kind: 'daily' | 'budget';
+  kind: 'daily' | 'budget' | 'security';
   scheduledTime: number;
   nextAttemptAt: number;
   deadline: number;
   attempts: number;
   delivery?: Delivery;
+  securityEvent?: R2BucketCreated;
 }
 
 const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -49,6 +51,23 @@ export class NotificationStore extends DurableObject<Env> {
     });
   }
 
+  async enqueueSecurityEvent(event: R2BucketCreated): Promise<void> {
+    const now = Date.now();
+    const receivedDate = localDate(now, this.env.TIME_ZONE);
+    const id = `security:r2-bucket-created:${receivedDate}`;
+    await this.ctx.storage.transaction(async storage => {
+      // 送信の成否に関係なく、受信日の最初の作成イベントだけを予約する。
+      if (await storage.get(`security-day:${receivedDate}`) !== undefined) return;
+      await storage.put(`security-day:${receivedDate}`, now);
+      await storage.put(`job:${id}`, {
+        kind: 'security', scheduledTime: now, nextAttemptAt: now,
+        deadline: now + RETRY_WINDOW_MS, attempts: 0, securityEvent: event,
+      } satisfies Job);
+      const alarm = await storage.getAlarm();
+      if (alarm === null || alarm > now) await storage.setAlarm(now);
+    });
+  }
+
   async alarm(): Promise<void> {
     await this.ctx.storage.transaction(async storage => {
       const receivedAt = await storage.get<number>('budget-request');
@@ -66,7 +85,7 @@ export class NotificationStore extends DurableObject<Env> {
       if (job.nextAttemptAt > Date.now()) continue;
       if (job.delivery && Date.now() >= Math.min(job.delivery.deadline, job.delivery.firstAttemptAt + RETRY_WINDOW_MS)) {
         console.error('LINE 通知の再試行期限を超えました。');
-        if (job.kind === 'daily') {
+        if (job.kind !== 'budget') {
           await this.ctx.storage.delete(key);
           continue;
         }
@@ -81,7 +100,7 @@ export class NotificationStore extends DurableObject<Env> {
       }
       if (Date.now() >= job.deadline) {
         if (job.kind === 'budget') console.warn('予算アラート受信後の料金確認期間を終了しました。');
-        else console.error('日次通知の再試行期限を超えました。');
+        else console.error('通知の再試行期限を超えました。');
         await this.ctx.storage.delete(key);
         continue;
       }
@@ -128,11 +147,13 @@ export class NotificationStore extends DurableObject<Env> {
         // 外部応答や例外本文には個人設定が含まれる可能性があるため記録しない。
         console.error(job.kind === 'budget'
           ? '料金の反映と未通知の請求期間を再確認します。'
-          : '料金取得または通知処理に失敗しました。再試行します。');
+          : job.kind === 'security'
+            ? 'Cloudflare イベントの通知処理に失敗しました。再試行します。'
+            : '料金取得または通知処理に失敗しました。再試行します。');
         await this.retry(key, job);
       }
     }
-    for (const prefix of ['done:', 'exhausted:']) {
+    for (const prefix of ['done:', 'exhausted:', 'security-day:']) {
       const completed = await this.ctx.storage.list<number>({ prefix });
       for (const [key, timestamp] of completed) {
         if (timestamp < Date.now() - RETENTION_MS) await this.ctx.storage.delete(key);
@@ -172,6 +193,18 @@ export class NotificationStore extends DurableObject<Env> {
           error.message,
         ].join('\n');
       }
+    } else if (job.kind === 'security') {
+      if (!job.securityEvent) throw new Error('Cloudflare イベント通知の情報がありません。');
+      id = key.slice('job:'.length);
+      text = [
+        'Cloudflare アカウントの操作警告',
+        'R2 バケットの作成イベントを検知しました。',
+        `バケット: ${job.securityEvent.bucketName}`,
+        `作成イベント日時: ${job.securityEvent.eventTimestamp} (UTC)`,
+        '身に覚えがない場合は Cloudflare アカウントへのアクセスを確認してください。',
+        '料金超過の判定とは別の通知です。',
+        `受信日 ${localDate(job.scheduledTime, this.env.TIME_ZONE)} (${this.env.TIME_ZONE}) の最初の作成のみ通知します。`,
+      ].join('\n');
     } else {
       const threshold = usdSetting(this.env.ALERT_THRESHOLD_USD, 'ALERT_THRESHOLD_USD');
       if (threshold <= 0) throw new Error('アラート閾値は0より大きい値が必要です。');

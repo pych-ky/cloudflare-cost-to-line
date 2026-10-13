@@ -1,5 +1,6 @@
 import type { Env } from './config';
 import { readBudgetEmail } from './email';
+import { readR2BucketCreated } from './security-events';
 
 export { NotificationStore } from './notifications';
 
@@ -28,6 +29,24 @@ export default {
       await env.NOTIFICATIONS.getByName('notifications').enqueueBudget();
     } catch {
       throw new Error('Budget notification could not be queued');
+    }
+  },
+
+  async queue(batch: MessageBatch<unknown>, env): Promise<void> {
+    for (const message of batch.messages) {
+      const event = readR2BucketCreated(message.body, env.ACCOUNT_ID);
+      if (!event) {
+        console.warn('対象外または不正な Cloudflare イベントを破棄しました。');
+        message.ack();
+        continue;
+      }
+      try {
+        await env.NOTIFICATIONS.getByName('notifications').enqueueSecurityEvent(event);
+        message.ack();
+      } catch {
+        console.error('Cloudflare イベント通知を保存できませんでした。再配信を要求します。');
+        message.retry();
+      }
     }
   },
 
