@@ -1,4 +1,4 @@
-import { forecastMonthlyCost, type DailyCost } from "./forecast";
+import { forecastMonthlyCost, type DailyCost } from "./forecast.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -36,9 +36,12 @@ interface UsageRow {
 }
 
 export class BillingError extends Error {
-  constructor(message: string, public readonly kind: "not-covered" | "unsupported" | "unavailable" = "unavailable") {
+  readonly kind: "not-covered" | "unsupported" | "unavailable";
+
+  constructor(message: string, kind: BillingError["kind"] = "unavailable") {
     super(message);
     this.name = "BillingError";
+    this.kind = kind;
   }
 }
 

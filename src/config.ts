@@ -14,7 +14,7 @@ export interface Env {
   NOTIFICATIONS: DurableObjectNamespace<NotificationStore>;
 }
 
-export function billingOptions(env: Env) {
+export function billingOptions(env: Pick<Env, 'ACCOUNT_ID' | 'BILLING_API_TOKEN'>) {
   if (!/^[a-f0-9]{32}$/i.test(env.ACCOUNT_ID) || !env.BILLING_API_TOKEN) {
     throw new Error('Cloudflare の料金参照設定が不足しています。');
   }
