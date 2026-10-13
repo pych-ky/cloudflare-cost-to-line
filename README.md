@@ -4,6 +4,7 @@ Cloudflare の利用料金を LINE に通知する、小さな TypeScript 製の
 
 - 毎日、日本時間0時に当月の計上済み従量料金と月末の概算を通知します。
 - Cloudflare の予算アラートメールを受信すると、API で累積従量料金を確認して LINE に通知します。同じ請求期間・閾値の通知は1回です。
+- R2 バケットの作成イベントを受信すると LINE に通知します。
 - SQLite バックエンドの Durable Object に送信状態を保存し、一時的な失敗は同じ LINE Retry-Key で最大23時間再試行します。
 
 ## 料金と集計の範囲
@@ -19,7 +20,7 @@ Cloudflare の利用料金と予算アラートは日次処理です。**10ド�
 ## 準備
 
 1. Node.js 24 以降と npm を用意し、`npm ci` を実行します。
-2. Cloudflare で対象アカウントに限定した `Billing Read` トークンを作成します。デプロイ用トークンは別に用意し、対象アカウントの Workers Scripts の編集に必要な権限を与えます。
+2. Cloudflare で対象アカウントに限定した `Billing Read` トークンを作成します。デプロイ用トークンは別に用意します。Worker の初回作成は `Workers Admin` で行い、作成後はトークンの権限をその Worker だけの `Individual Workers Editor` へ縮小します。既存トークンの権限を編集する場合、GitHub の Secret の更新は不要です。
 3. LINE 公式アカウントで Messaging API を有効にし、チャネルアクセストークンを発行します。通知先の本人は公式アカウントを友だち追加し、[Messaging API のユーザーID](https://developers.line.biz/ja/docs/messaging-api/getting-user-ids/)を確認します。通常の LINE ID とは異なります。
 4. GitHub の公開リポジトリにソースを置き、Settings → Environments で `production` を作成します。
 
@@ -52,7 +53,7 @@ LINE は既存アカウントも使えます。グループに送る場合は公
 
 実行時の認証情報と LINE・メールの設定は GitHub からデプロイ時に Workers Secrets へ反映します。デプロイ workflow 内で一時ファイルを権限600で作成し、終了時に削除します。秘密値を含む設定ファイルや、GitHub の個人設定をリポジトリに追加しないでください。
 
-## メール受信とデプロイ
+## メール・イベント受信とデプロイ
 
 [Cloudflare Budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/) は Pay-as-you-go アカウントの累積従量料金を対象にします。現在の契約で利用できることを確認してください。
 
@@ -70,6 +71,12 @@ API v1 が返す USD・UTC 日次明細を対象に、月次の起算日で期�
 
 独自ドメインがない場合も日次通知は運用できます。このメール経由のアラートを有効にするには、ドメインと Email Routing の設定が必要です。
 
+R2 バケット作成の通知を利用する場合は、Cloudflare のダッシュボードで Queue を作成し、[Subscriptions → Subscribe to events](https://developers.cloudflare.com/queues/event-subscriptions/manage-event-subscriptions/) から R2 の `bucket.created` を購読します。Queue の Consumer にこの Worker を接続してください。R2 の契約を有効にせず、イベントの購読を先に設定できます。
+
+Queue と Consumer の接続はダッシュボードで管理します。固定している Wrangler 4.149.0 は、`queues.consumers` を定義しなければ既存の接続を変更しません。追加の環境変数や `wrangler.jsonc` の変更、デプロイ用トークンへの Queues 編集権限の追加は不要です。Wrangler を更新する際は、この接続が維持されることを再確認してください。
+
+R2 作成イベントの通知は日次料金集計から独立し、同じ受信日に複数のバケットが作成されても最初の1件だけを通知します。受信日は `TIME_ZONE` で区切ります。オブジェクトの大量利用・契約変更・全製品の操作監視や、自動停止には対応しません。作成から LINE 到着までの即時性は保証しません。Queues の無料枠は [1日10,000操作、メッセージ保持24時間](https://developers.cloudflare.com/queues/platform/pricing/)です。メッセージ1件の書き込み・読み込み・削除は通常3操作を使い、再試行でも操作を消費します。
+
 ## ローカルでの確認
 
 - `npm run check`：TypeScript の型チェック。
@@ -78,7 +85,7 @@ API v1 が返す USD・UTC 日次明細を対象に、月次の起算日で期�
 
 個人設定なしで型チェックとビルドができます。実サービスへの疎通には前述の設定が必要です。設定の項目だけを示した `env.example` を用意しています。値をモデル・会話・公開ログに貼り付ける必要はありません。
 
-通常の HTTP エンドポイントは404を返します。本番の `workers.dev` とプレビューURLは無効にし、Cron・Email Routing と内部の Durable Object だけで実行します。
+通常の HTTP エンドポイントは404を返します。本番の `workers.dev` とプレビューURLは無効にし、Cron・Email Routing・Queues と内部の Durable Object だけで実行します。
 
 LINE の HTTP 200 は API の受理を意味します。ブロックなどによる端末への未配信までは検知できません。[日本の無料プランは月200通](https://developers.line.biz/ja/docs/messaging-api/pricing/)で、同じ公式アカウントの他の配信も合算されます。処理エラーは個人設定や外部応答の本文を記録せず、固定メッセージと HTTP ステータスで通知の原因を確認できるようにします。
 
