@@ -36,7 +36,7 @@ interface UsageRow {
 }
 
 export class BillingError extends Error {
-  constructor(message: string, public readonly kind: "unsupported" | "unavailable" = "unavailable") {
+  constructor(message: string, public readonly kind: "not-covered" | "unsupported" | "unavailable" = "unavailable") {
     super(message);
     this.name = "BillingError";
   }
@@ -94,8 +94,11 @@ async function request(options: BillingOptions, suffix: string): Promise<unknown
 
 async function getSubscriptions(options: BillingOptions): Promise<Subscription[]> {
   const info = object(await request(options, "/info"));
+  if (info.covered === false) {
+    throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "not-covered");
+  }
   if (info.covered !== true) {
-    throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "unsupported");
+    throw new BillingError("Cloudflare 料金 API の対象判定を読み取れません。", "unsupported");
   }
   if (!Array.isArray(info.subscriptions)) {
     throw new BillingError("Cloudflare の契約情報の形式が未対応です。", "unsupported");
@@ -185,6 +188,7 @@ function dailyCosts(rows: readonly UsageRow[], subscriptions: readonly Subscript
 
 function usd(amount: number): string {
   if (!Number.isFinite(amount) || amount < 0) throw new BillingError("Cloudflare の料金合計が不正です。");
+  if (amount > 0 && amount < 0.01) return "$0.01 USD 未満";
   return `$${amount.toFixed(2)} USD`;
 }
 
@@ -212,16 +216,25 @@ export async function getMonthlyReport(
   const hasMonthlyData = rows.some((row) => row.start >= monthStart.getTime() && row.end <= Math.min(monthEnd.getTime(), Math.floor(now.getTime() / DAY_MS) * DAY_MS));
   const lines = [
     `Cloudflare ${period} 料金`,
-    `計上済み従量料金: ${hasMonthlyData ? usd(forecast.recordedUsd) : "データなし"}`,
+    `状態: ${!hasMonthlyData ? "当月の料金データなし" : !forecast.recordedComplete ? "料金データに欠測あり" : forecast.recordedUsd === 0 ? "計上済み従量料金は0ドル" : "料金データ取得済み"}`,
+    !hasMonthlyData
+      ? "計上済み従量料金: 未確認（0ドルとは判定できません）"
+      : `${forecast.recordedComplete ? "計上済み従量料金" : "取得できた従量料金の小計"}: ${usd(forecast.recordedUsd)}`,
     forecast.estimatedUsd === null
-      ? `月末予測: 算出不可 (${forecast.unavailableReason})`
+      ? `月末予測: 保留（${forecast.unavailableReason}）`
       : `月末予測: 約 ${usd(forecast.estimatedUsd + fixedMonthlyCostUsd)}`,
     `データ対象: ${forecast.dataThrough ?? "データなし"}${forecast.dataThrough ? " UTC まで" : ""}`,
   ];
+  if (hasMonthlyData && !forecast.recordedComplete) {
+    lines.push("欠測分を含む従量料金の総額は未確認です。");
+  }
   if (fixedMonthlyCostUsd > 0) {
     lines.push(`設定した固定月額: ${usd(fixedMonthlyCostUsd)}${forecast.estimatedUsd === null ? "" : " (予測に1回加算)"}`);
   }
-  lines.push("従量料金は直近7日からの概算。無料枠超過・税・クレジットは予測に未反映。");
+  lines.push("計上額は取得済みの従量料金です。未反映の利用・固定費・税などは含みません。");
+  if (forecast.estimatedUsd !== null) {
+    lines.push("月末予測は直近7日からの概算。無料枠超過・税・クレジットは予測に未反映。");
+  }
   return { period, message: lines.join("\n") };
 }
 

@@ -186,11 +186,19 @@ export class NotificationStore extends DurableObject<Env> {
         );
         text = report.message;
       } catch (error) {
-        if (!(error instanceof BillingError) || error.kind !== 'unsupported') throw error;
+        const billingError = error instanceof BillingError ? error : null;
+        // 一時的な失敗は2回再試行し、復旧しなければ当日はエラーを通知する。
+        if ((!billingError || billingError.kind === 'unavailable') && job.attempts < 2) throw error;
+        const notCovered = billingError?.kind === 'not-covered';
         text = [
           `Cloudflare ${localDate(job.scheduledTime, this.env.TIME_ZONE)} 料金`,
-          '計上額・月末予測: 算出不可',
-          error.message,
+          `状態: ${notCovered ? '料金データの提供対象外' : '料金データ取得エラー'}`,
+          '計上済み従量料金: 未確認（0ドルとは判定できません）',
+          '月末予測: 料金データを取得できないため保留',
+          `理由: ${billingError?.message ?? '料金の取得・集計処理に失敗しました。Bot の設定とログを確認してください。'}`,
+          notCovered
+            ? 'Cloudflare の請求画面で確認してください。次回の定期通知で対象判定を再確認します。'
+            : 'Cloudflare の請求画面と Bot の料金参照設定を確認してください。次回の定期通知で再取得します。',
         ].join('\n');
       }
     } else if (job.kind === 'security') {

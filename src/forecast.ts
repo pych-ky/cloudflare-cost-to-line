@@ -8,6 +8,7 @@ export interface DailyCost {
 
 export interface MonthlyForecast {
   recordedUsd: number;
+  recordedComplete: boolean;
   estimatedUsd: number | null;
   dataThrough: string | null;
   unavailableReason: string | null;
@@ -32,6 +33,7 @@ export function forecastMonthlyCost(
   const latest = completed.length ? Math.max(...completed) : null;
   const result: MonthlyForecast = {
     recordedUsd,
+    recordedComplete: false,
     estimatedUsd: null,
     dataThrough: latest === null ? null : new Date(latest).toISOString().slice(0, 10),
     unavailableReason: null,
@@ -47,6 +49,7 @@ export function forecastMonthlyCost(
       return { ...result, unavailableReason: "当月データに欠測あり" };
     }
   }
+  result.recordedComplete = monthly.length > 0;
 
   let recentTotal = 0;
   for (let offset = 0; offset < 7; offset++) {
@@ -57,7 +60,7 @@ export function forecastMonthlyCost(
     recentTotal += day.amountUsd;
   }
   if (recentTotal === 0) {
-    return { ...result, unavailableReason: "直近7日は無料枠内または計上額0" };
+    return { ...result, unavailableReason: "直近7日の計上額は0ドル。今後の無料枠超過を予測できません" };
   }
 
   const remainingDays = Math.max(0, Math.round((end - Math.max(start, latest + DAY_MS)) / DAY_MS));
