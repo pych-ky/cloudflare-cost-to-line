@@ -68,14 +68,14 @@ function timestamp(value: unknown): number {
   return parsed;
 }
 
-async function request(options: BillingOptions, suffix: string): Promise<unknown> {
+async function request(options: BillingOptions, path: string): Promise<Record<string, unknown>> {
   if (!/^[a-f\d]{32}$/i.test(options.accountId) || !options.apiToken) {
     throw new BillingError("Cloudflare のアカウント ID または料金参照トークンが未設定です。");
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${options.accountId}/billable-usage${suffix}`, {
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${options.accountId}${path}`, {
       headers: { Authorization: `Bearer ${options.apiToken}` },
       signal: controller.signal,
     });
@@ -86,7 +86,7 @@ async function request(options: BillingOptions, suffix: string): Promise<unknown
     if (envelope.success !== true) {
       throw new BillingError("Cloudflare 料金 API の取得に失敗しました。");
     }
-    return envelope.result;
+    return envelope;
   } catch (error) {
     if (error instanceof BillingError) throw error;
     throw new BillingError("Cloudflare 料金 API の通信または応答の読み取りに失敗しました。");
@@ -96,7 +96,7 @@ async function request(options: BillingOptions, suffix: string): Promise<unknown
 }
 
 async function getSubscriptions(options: BillingOptions): Promise<Subscription[]> {
-  const info = object(await request(options, "/info"));
+  const info = object((await request(options, "/billable-usage/info")).result);
   if (info.covered === false) {
     throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "not-covered");
   }
@@ -126,7 +126,7 @@ async function getSubscriptions(options: BillingOptions): Promise<Subscription[]
 }
 
 async function getUsage(options: BillingOptions, subscriptions: readonly Subscription[], suffix = ""): Promise<UsageRow[]> {
-  const result = await request(options, suffix);
+  const result = (await request(options, `/billable-usage${suffix}`)).result;
   if (!Array.isArray(result)) {
     throw new BillingError("Cloudflare の料金明細の形式が未対応です。", "unsupported");
   }
@@ -163,6 +163,33 @@ async function getUsage(options: BillingOptions, subscriptions: readonly Subscri
     seen.add(rowKey);
     return { amountUsd: item.ContractedCost, start, end, billingStart, subscriptionId, seriesKey };
   });
+}
+
+export async function getAccountPlanSummary(options: BillingOptions): Promise<string> {
+  const envelope = await request(options, "/subscriptions");
+  if (!Array.isArray(envelope.result)) {
+    throw new BillingError("Cloudflare の契約情報の形式が未対応です。", "unsupported");
+  }
+  const states: Record<string, string> = {
+    Trial: "試用中", Provisioned: "提供中", Paid: "支払済み",
+    AwaitingPayment: "支払待ち", Cancelled: "解約済み", Failed: "失敗", Expired: "期限切れ",
+  };
+  const resultInfo = envelope.result_info == null ? null : object(envelope.result_info);
+  const partial = typeof resultInfo?.total_count === "number" && resultInfo.total_count > envelope.result.length;
+  if (envelope.result.length === 0) {
+    return partial ? "契約情報: 一部のみ取得（契約明細なし）" : "契約情報: API に記載なし";
+  }
+  const plans = envelope.result.slice(0, 3).map((value: unknown) => {
+    const item = object(value);
+    const plan = item.rate_plan == null ? null : object(item.rate_plan);
+    const name = typeof plan?.public_name === "string" && plan.public_name.trim()
+      ? plan.public_name.trim().replace(/\s+/g, " ").slice(0, 80) : "名称不明";
+    const state = typeof item.state === "string" && Object.hasOwn(states, item.state) ? states[item.state] : "状態不明";
+    return `${name}（${state}）`;
+  });
+  // 契約名や契約価格は、当月の利用料金が0ドルである根拠にはしない。
+  const omitted = partial || envelope.result.length > plans.length;
+  return `確認できた契約${omitted ? "（一部）" : ""}: ${plans.join("、")}`;
 }
 
 function dailyCosts(rows: readonly UsageRow[], subscriptions: readonly Subscription[]): DailyCost[] {
