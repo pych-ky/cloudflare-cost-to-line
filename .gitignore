@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+.env*
+wrangler.generated.json
+verification/
+secrets/
+credentials/
+*.log
+.DS_Store
