@@ -5,11 +5,7 @@ export interface Env {
   BILLING_API_TOKEN: string;
   LINE_CHANNEL_ACCESS_TOKEN: string;
   LINE_RECIPIENT_ID: string;
-  ALERT_EMAIL_RECIPIENT?: string;
-  ALERT_EMAIL_SENDER?: string;
-  ALERT_EMAIL_SUBJECT?: string;
   TIME_ZONE: string;
-  ALERT_THRESHOLD_USD: string;
   MONTHLY_FIXED_COST_USD: string;
   NOTIFICATIONS: DurableObjectNamespace<NotificationStore>;
 }

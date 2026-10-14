@@ -36,7 +36,6 @@ jobs:
           WORKER_NAME: ${{ vars.WORKER_NAME }}
           TIME_ZONE: ${{ vars.TIME_ZONE }}
           DAILY_CRON: ${{ vars.DAILY_CRON }}
-          ALERT_THRESHOLD_USD: ${{ vars.ALERT_THRESHOLD_USD }}
           MONTHLY_FIXED_COST_USD: ${{ vars.MONTHLY_FIXED_COST_USD }}
       - run: npm run build -- --config wrangler.generated.json
       - name: Deploy code and runtime secrets
@@ -46,9 +45,6 @@ jobs:
           BILLING_API_TOKEN: ${{ secrets.BILLING_API_TOKEN }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_RECIPIENT_ID: ${{ secrets.LINE_RECIPIENT_ID }}
-          ALERT_EMAIL_RECIPIENT: ${{ secrets.ALERT_EMAIL_RECIPIENT }}
-          ALERT_EMAIL_SENDER: ${{ secrets.ALERT_EMAIL_SENDER }}
-          ALERT_EMAIL_SUBJECT: ${{ secrets.ALERT_EMAIL_SUBJECT }}
         run: |
           umask 077
           runtime_secrets_file="$(mktemp --suffix=.json "$RUNNER_TEMP/cloudflare-line-secrets.XXXXXX")"
@@ -67,15 +63,6 @@ jobs:
             if (!value?.trim()) throw new Error(`Missing GitHub secret: ${name}`);
             return [name, value];
           }));
-          const emailNames = ["ALERT_EMAIL_RECIPIENT", "ALERT_EMAIL_SENDER", "ALERT_EMAIL_SUBJECT"];
-          const emailConfigured = emailNames.some((name) => process.env[name]?.trim());
-          if (emailConfigured) {
-            for (const name of emailNames) {
-              const value = process.env[name];
-              if (!value?.trim()) throw new Error(`Missing GitHub secret: ${name}`);
-              secrets[name] = value;
-            }
-          }
           if (!process.env.CLOUDFLARE_API_TOKEN?.trim()) {
             throw new Error("Missing GitHub secret: CLOUDFLARE_API_TOKEN");
           }
