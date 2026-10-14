@@ -1,4 +1,4 @@
-import { BillingError, getAccountPlanSummary, getMonthlyReport } from './billing.ts';
+import { BillingError, getMonthlyReport } from './billing.ts';
 import { billingOptions, localDate, usdSetting, type Env } from './config.ts';
 
 export async function getDailyMessage(
@@ -18,19 +18,14 @@ export async function getDailyMessage(
     if ((!billingError || billingError.kind === 'unavailable') && attempts < 2) throw error;
     const notCovered = billingError?.kind === 'not-covered';
     if (notCovered) {
-      let plans: string;
-      try {
-        plans = await getAccountPlanSummary(billingOptions(env));
-        console.log('料金API対象外のため、契約情報を参照しました。');
-      } catch {
-        plans = '契約情報: 取得できませんでした。';
-        console.warn('料金APIは対象外です。補足する契約情報の取得に失敗しました。');
-      }
+      console.log('料金API対象外のため、当月料金と月末予測は不明です。');
       return [
         `Cloudflare ${localDate(scheduledTime, env.TIME_ZONE)} 料金`,
         '',
-        '料金データ: 提供対象外',
-        plans,
+        '当月料金: 未取得（0ドルかは不明）',
+        '月末予測: 算出不可',
+        '',
+        '理由: 利用中の料金APIの対象外です。',
       ].join('\n');
     }
     return [

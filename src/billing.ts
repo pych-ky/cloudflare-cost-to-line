@@ -165,33 +165,6 @@ async function getUsage(options: BillingOptions, subscriptions: readonly Subscri
   });
 }
 
-export async function getAccountPlanSummary(options: BillingOptions): Promise<string> {
-  const envelope = await request(options, "/subscriptions");
-  if (!Array.isArray(envelope.result)) {
-    throw new BillingError("Cloudflare の契約情報の形式が未対応です。", "unsupported");
-  }
-  const states: Record<string, string> = {
-    Trial: "試用中", Provisioned: "提供中", Paid: "支払済み",
-    AwaitingPayment: "支払待ち", Cancelled: "解約済み", Failed: "失敗", Expired: "期限切れ",
-  };
-  const resultInfo = envelope.result_info == null ? null : object(envelope.result_info);
-  const partial = typeof resultInfo?.total_count === "number" && resultInfo.total_count > envelope.result.length;
-  if (envelope.result.length === 0) {
-    return partial ? "契約情報: 一部のみ取得（契約明細なし）" : "契約情報: API に記載なし";
-  }
-  const plans = envelope.result.slice(0, 3).map((value: unknown) => {
-    const item = object(value);
-    const plan = item.rate_plan == null ? null : object(item.rate_plan);
-    const name = typeof plan?.public_name === "string" && plan.public_name.trim()
-      ? plan.public_name.trim().replace(/\s+/g, " ").slice(0, 80) : "名称不明";
-    const state = typeof item.state === "string" && Object.hasOwn(states, item.state) ? states[item.state] : "状態不明";
-    return `${name}（${state}）`;
-  });
-  // 契約名や契約価格は、当月の利用料金が0ドルである根拠にはしない。
-  const omitted = partial || envelope.result.length > plans.length;
-  return `確認できた契約${omitted ? "（一部）" : ""}: ${plans.join("、")}`;
-}
-
 function dailyCosts(rows: readonly UsageRow[], subscriptions: readonly Subscription[]): DailyCost[] {
   const series = new Map<string, string | null>();
   const days = new Map<number, Map<string, number>>();
