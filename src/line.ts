@@ -1,4 +1,4 @@
-export type PushResult =
+type PushResult =
   | { kind: "accepted" }
   | { kind: "retry"; status: number | null }
   | { kind: "failed"; status: number };
@@ -13,8 +13,6 @@ export async function pushMessage(
     throw new Error("LINE message must contain between 1 and 5000 UTF-16 code units");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
@@ -27,7 +25,7 @@ export async function pushMessage(
         to: recipientId,
         messages: [{ type: "text", text }],
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (
@@ -42,7 +40,5 @@ export async function pushMessage(
     return { kind: "failed", status: response.status };
   } catch {
     return { kind: "retry", status: null };
-  } finally {
-    clearTimeout(timeout);
   }
 }

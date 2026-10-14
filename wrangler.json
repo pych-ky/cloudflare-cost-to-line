@@ -8,7 +8,6 @@
   "triggers": { "crons": ["0 15 * * *"] },
   "vars": {
     "TIME_ZONE": "Asia/Tokyo",
-    "ALERT_THRESHOLD_USD": "10",
     "MONTHLY_FIXED_COST_USD": "0"
   },
   "durable_objects": {
