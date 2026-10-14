@@ -247,7 +247,6 @@ export async function getMonthlyReport(
       "判定根拠: 契約・料金明細なし",
     ];
     if (fixedMonthlyCostUsd > 0) lines.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}`);
-    lines.push("※固定料金・税・未反映分は含みません。");
     console.log("料金APIの対象外で、契約・対象期間の明細が空であることを確認しました。");
     return { period, message: lines.join("\n") };
   }
@@ -259,26 +258,37 @@ export async function getMonthlyReport(
     "",
   ];
   if (!hasMonthlyData) {
-    lines.push("料金を確認できませんでした。", "0ドルかどうかは不明です。", "", "理由: 当月の料金データがありません。");
+    lines.push("当月の従量料金: 不明（当月データなし）");
   } else if (!forecast.recordedComplete) {
-    lines.push("当月の料金総額は不明です。", "理由: 日別データに欠測があります。", "", `取得分の小計: ${usd(forecast.recordedUsd)}`);
+    lines.push("当月の従量料金: 不明（欠測あり）");
   } else {
-    lines.push(`確認できた料金: ${usd(forecast.recordedUsd)}`);
-  }
-  if (forecast.dataThrough) {
-    lines.push(`データ対象: ${forecast.dataThrough} UTC まで`);
+    lines.push(`当月の従量料金: ${usd(forecast.recordedUsd)}`);
   }
   if (forecast.estimatedUsd !== null) {
-    lines.push("", `月末予測: 約 ${usd(forecast.estimatedUsd + fixedMonthlyCostUsd)}`);
-  } else if (forecast.recordedComplete) {
-    lines.push("", "月末予測: 保留", `理由: ${forecast.unavailableReason}`);
+    lines.push(`月末予測: 約 ${usd(forecast.estimatedUsd + fixedMonthlyCostUsd)}`);
+  } else {
+    lines.push(`月末予測: 算出不可（${forecast.unavailableReason}）`);
+  }
+  const details: string[] = [];
+  if (hasMonthlyData && !forecast.recordedComplete) {
+    details.push(`取得分の小計: ${usd(forecast.recordedUsd)}`);
+  }
+  if (forecast.dataThrough) {
+    details.push(`データ対象: ${forecast.dataThrough} UTC まで`);
+    const dataThrough = Date.parse(`${forecast.dataThrough}T00:00:00Z`);
+    const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
+    if (today - dataThrough >= 3 * DAY_MS) {
+      details.push("注意: 最終データ日が3日以上前です。");
+    }
+    const recentStart = dataThrough - 6 * DAY_MS;
+    if (forecast.estimatedUsd !== null && recentStart < monthStart.getTime()) {
+      details.push("予測根拠: 前月分を含む7日平均");
+    }
   }
   if (fixedMonthlyCostUsd > 0) {
-    lines.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}${forecast.estimatedUsd === null ? "" : " (予測に含む)"}`);
+    details.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}${forecast.estimatedUsd === null ? "" : " (予測に含む)"}`);
   }
-  if (hasMonthlyData) {
-    lines.push("", "※計上額は従量料金のみ。未反映分・固定費・税等を除きます。");
-  }
+  if (details.length > 0) lines.push("", ...details);
   if (forecast.estimatedUsd !== null) {
     lines.push("※予測は概算です。無料枠超過・税・クレジットは未反映。");
   }

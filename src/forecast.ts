@@ -40,13 +40,13 @@ export function forecastMonthlyCost(
   };
 
   if (latest === null || (completeBefore > start && monthly.length === 0)) {
-    return { ...result, unavailableReason: "当月のデータなし" };
+    return { ...result, unavailableReason: "当月データなし" };
   }
 
   // 計上日までの穴と、集計がまだ終わっていない後続の日を区別する。
   for (let day = start; day <= latest; day += DAY_MS) {
     if (!daily.get(day)?.complete) {
-      return { ...result, unavailableReason: "当月データに欠測あり" };
+      return { ...result, unavailableReason: "日別データに欠測あり" };
     }
   }
   result.recordedComplete = monthly.length > 0;
@@ -55,12 +55,12 @@ export function forecastMonthlyCost(
   for (let offset = 0; offset < 7; offset++) {
     const day = daily.get(latest - offset * DAY_MS);
     if (!day?.complete) {
-      return { ...result, unavailableReason: "連続した7日分のデータ不足" };
+      return { ...result, unavailableReason: "連続7日分のデータ不足" };
     }
     recentTotal += day.amountUsd;
   }
   if (recentTotal === 0) {
-    return { ...result, unavailableReason: "直近7日が0ドルで、無料枠超過を予測できません" };
+    return { ...result, unavailableReason: "直近7日が0ドル" };
   }
 
   const remainingDays = Math.max(0, Math.round((end - Math.max(start, latest + DAY_MS)) / DAY_MS));
