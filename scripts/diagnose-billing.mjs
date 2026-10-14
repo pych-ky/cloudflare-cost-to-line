@@ -12,10 +12,13 @@ const query = new URLSearchParams({
   from: from.toISOString().slice(0, 10),
   to: now.toISOString().slice(0, 10),
 });
+// v1は請求起算日を含まないと明細が返らないため、前月初日から照会する。
+const v1Query = new URLSearchParams(query);
+v1Query.set("from", new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10));
 const probes = [
   { name: "coverage", path: "/billable-usage/info" },
   { name: "subscriptions", path: "/subscriptions" },
-  { name: "v1-usage", path: `/billable-usage?${query}` },
+  { name: "v1-usage", path: `/billable-usage?${v1Query}` },
   { name: "v2-usage", path: `/billable/usage?${query}` },
   { name: "v2-metrics", path: "/billable/usage/billable-metrics" },
 ];
