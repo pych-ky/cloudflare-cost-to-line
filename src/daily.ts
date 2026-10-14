@@ -25,7 +25,7 @@ export async function getDailyMessage(
         '当月料金: 未取得（0ドルかは不明）',
         '月末予測: 算出不可',
         '',
-        '理由: 利用中の料金APIの対象外です。',
+        `理由: ${billingError.message}`,
       ].join('\n');
     }
     return [

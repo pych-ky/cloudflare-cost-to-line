@@ -95,16 +95,31 @@ async function request(options: BillingOptions, path: string): Promise<Record<st
   }
 }
 
-async function getSubscriptions(options: BillingOptions): Promise<Subscription[]> {
-  const info = object((await request(options, "/billable-usage/info")).result);
-  if (info.covered === false) {
-    throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "not-covered");
+function isEmptyList(envelope: Record<string, unknown>): boolean {
+  if (!Array.isArray(envelope.result)) {
+    throw new BillingError("Cloudflare の契約・料金明細一覧の形式が未対応です。", "unsupported");
   }
-  if (info.covered !== true) {
+  if (envelope.result.length > 0) return false;
+  if (envelope.result_info === undefined) return true;
+  const page = object(envelope.result_info);
+  // 空のページでも、別ページや未取得の項目があれば不存在とは判定しない。
+  return (page.count === undefined || page.count === 0)
+    && (page.total_count === undefined || page.total_count === 0)
+    && (page.total_pages === undefined || page.total_pages === 0 || page.total_pages === 1)
+    && (page.page === undefined || page.page === 1);
+}
+
+async function getSubscriptions(options: BillingOptions): Promise<Subscription[] | null> {
+  const info = object((await request(options, "/billable-usage/info")).result);
+  if (typeof info.covered !== "boolean") {
     throw new BillingError("Cloudflare 料金 API の対象判定を読み取れません。", "unsupported");
   }
   if (!Array.isArray(info.subscriptions)) {
     throw new BillingError("Cloudflare の契約情報の形式が未対応です。", "unsupported");
+  }
+  if (!info.covered) {
+    if (info.subscriptions.length === 0) return null;
+    throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "not-covered");
   }
   const subscriptions = info.subscriptions.map((value: unknown) => {
     const item = object(value);
@@ -211,10 +226,32 @@ export async function getMonthlyReport(
   const monthEnd = new Date(Date.UTC(year, month, 1));
   const period = `${year}-${String(month).padStart(2, "0")}`;
   const subscriptions = await getSubscriptions(options);
-  // 全契約の月次起算日を含めて取得し、料金日付で暦月に絞る。
+  // 全契約の月次起算日を含め、JST月初もUTCの日付範囲が逆転しない期間を取得する。
   const from = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10);
   const to = now.toISOString().slice(0, 10);
-  const rows = await getUsage(options, subscriptions, `?${new URLSearchParams({ from, to })}`);
+  const query = new URLSearchParams({ from, to });
+  if (subscriptions === null) {
+    // 対象外だけでは0にせず、契約と対象期間の料金明細も正常な空配列か確認する。
+    if (!isEmptyList(await request(options, "/subscriptions"))) {
+      throw new BillingError("契約なしを確認できないため、0ドルと判定できません。", "not-covered");
+    }
+    if (!isEmptyList(await request(options, `/billable-usage?${query}`))) {
+      throw new BillingError("料金明細なしを確認できないため、0ドルと判定できません。", "not-covered");
+    }
+    const lines = [
+      `Cloudflare ${period} 料金`,
+      "",
+      "当月の従量料金: 0ドル",
+      "月末予測: 算出不可（日別データなし）",
+      "",
+      "判定根拠: 契約・料金明細なし",
+    ];
+    if (fixedMonthlyCostUsd > 0) lines.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}`);
+    lines.push("※固定料金・税・未反映分は含みません。");
+    console.log("料金APIの対象外で、契約・対象期間の明細が空であることを確認しました。");
+    return { period, message: lines.join("\n") };
+  }
+  const rows = await getUsage(options, subscriptions, `?${query}`);
   const forecast = forecastMonthlyCost(dailyCosts(rows, subscriptions), monthStart, monthEnd, now);
   const hasMonthlyData = rows.some((row) => row.start >= monthStart.getTime() && row.end <= Math.min(monthEnd.getTime(), Math.floor(now.getTime() / DAY_MS) * DAY_MS));
   const lines = [
@@ -277,6 +314,9 @@ export async function getBudgetSpends(options: BillingOptions, now: Date, thresh
   if (!Number.isFinite(now.getTime())) throw new BillingError("アラート確認の日付が不正です。");
   if (!Number.isFinite(thresholdUsd) || thresholdUsd <= 0) throw new BillingError("アラート閾値は0より大きい値が必要です。");
   const subscriptions = await getSubscriptions(options);
+  if (subscriptions === null) {
+    throw new BillingError("このアカウントは Cloudflare 料金 API の対象外です。", "not-covered");
+  }
   const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1)).toISOString().slice(0, 10);
   const to = now.toISOString().slice(0, 10);
   const rows = await getUsage(options, subscriptions, `?${new URLSearchParams({ from, to })}`);
