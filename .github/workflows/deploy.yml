@@ -39,6 +39,16 @@ jobs:
           DAILY_CRON: ${{ vars.DAILY_CRON }}
           MONTHLY_FIXED_COST_USD: ${{ vars.MONTHLY_FIXED_COST_USD }}
       - run: npm run build -- --config wrangler.generated.json
+      - name: Record current deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/capture-deployment.mjs wrangler.generated.json "$RUNNER_TEMP/deployment-before.json"
+      - name: Save rollback record before deployment
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deployment-before-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/deployment-before.json
+          if-no-files-found: error
       - name: Deploy code and runtime secrets
         shell: bash
         env:
