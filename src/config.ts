@@ -1,4 +1,4 @@
-import type { NotificationStore } from './notifications';
+import type { NotificationStore } from './notifications.ts';
 
 export interface Env {
   ACCOUNT_ID: string;

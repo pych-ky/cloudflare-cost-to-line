@@ -1,6 +1,6 @@
-import type { Env } from './config';
+import type { Env } from './config.ts';
 
-export { NotificationStore } from './notifications';
+export { NotificationStore } from './notifications.ts';
 
 export default {
   async scheduled(controller, env): Promise<void> {

@@ -1,14 +1,13 @@
 import { DurableObject } from 'cloudflare:workers';
-import { getDailyMessage } from './billing';
-import { localDate, type Env } from './config';
-import { pushMessage } from './line';
+import { getDailyMessage } from './billing.ts';
+import { localDate, type Env } from './config.ts';
+import { pushMessage } from './line.ts';
 
 interface Delivery {
   id: string;
   text: string;
   recipient: string;
   retryKey: string;
-  deadline: number;
 }
 
 interface Job {
@@ -48,7 +47,7 @@ export class NotificationStore extends DurableObject<Env> {
         continue;
       }
       if (job.nextAttemptAt > Date.now()) continue;
-      if (Date.now() >= job.deadline || (job.delivery && Date.now() >= job.delivery.deadline)) {
+      if (Date.now() >= job.deadline) {
         console.error('通知の再試行期限切れです。');
         await storage.delete(key);
         continue;
@@ -60,7 +59,7 @@ export class NotificationStore extends DurableObject<Env> {
           // 停止後も同じキー・本文・宛先で再試行する。
           await storage.put(key, job);
         }
-        if (Date.now() >= job.delivery.deadline) {
+        if (Date.now() >= job.deadline) {
           if (preparingDelivery) delete job.delivery;
           await this.retry(key, job);
           continue;
@@ -103,20 +102,25 @@ export class NotificationStore extends DurableObject<Env> {
   }
 
   private async prepareDelivery(key: string, job: Job): Promise<Delivery> {
-    if (!this.env.LINE_CHANNEL_ACCESS_TOKEN || !/^[UCR][a-f0-9]{32}$/i.test(this.env.LINE_RECIPIENT_ID)) {
+    if (!this.env.LINE_CHANNEL_ACCESS_TOKEN) {
+      console.error('LINE_CHANNEL_ACCESS_TOKEN が設定されていません。');
+      throw new Error();
+    }
+    if (!/^[UCR][a-f0-9]{32}$/i.test(this.env.LINE_RECIPIENT_ID)) {
+      console.error('LINE_RECIPIENT_ID の形式が不正です。');
       throw new Error();
     }
     const text = await getDailyMessage(this.env, job.scheduledTime, job.attempts);
     return {
       id: key.slice('job:'.length), text, recipient: this.env.LINE_RECIPIENT_ID,
-      retryKey: crypto.randomUUID(), deadline: job.deadline,
+      retryKey: crypto.randomUUID(),
     };
   }
 
   private async retry(key: string, job: Job): Promise<void> {
     job.attempts += 1;
     const delay = Math.min(60_000 * 2 ** (job.attempts - 1), 60 * 60_000);
-    job.nextAttemptAt = Math.min(Date.now() + delay, job.deadline, job.delivery?.deadline ?? Infinity);
+    job.nextAttemptAt = Math.min(Date.now() + delay, job.deadline);
     await this.ctx.storage.put(key, job);
   }
 }
