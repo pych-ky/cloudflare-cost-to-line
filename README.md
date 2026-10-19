@@ -57,6 +57,20 @@ GitHub Actions で `main` を対象に手動実行する。
   - Deploy 前でも実行可能
   - 日次の重複判定とは独立し、Worker・Cron の稼働確認にはならない
 
+### コードの復旧
+
+Deploy は変更前の稼働版を `deployment-before-実行ID-試行番号` Artifact に保存してからデプロイする。
+取得・保存に失敗した場合はデプロイしない。
+
+1. 問題が起きた Deploy 実行の Artifact をダウンロードし、`deployment-before.json` の `worker_name` を確認する。
+2. Cloudflare Dashboard で対象アカウントの Worker の Deployments を開き、`deployment.versions` に記録された `version_id` のうち復旧する版を選び、Rollback を実行する。
+   選んだ版が100%で稼働するため、複数版に分かれている場合は正常な版を確認して選ぶ。
+
+`deployment: null` は初回デプロイで復旧先がないことを示す。
+これはコード版の切り替えであり、Durable Object の保存状態や送信済み通知、GitHub Secrets は戻らない。
+Secrets 変更や Durable Object の移行によって復旧を拒否された場合は、強制せず現在の設定・データと互換な修正を再デプロイする。
+Cloudflare の[復旧制限](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/#limits)も確認する。
+
 ## 通知内容
 
 ```text
