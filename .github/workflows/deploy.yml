@@ -26,8 +26,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
+          check-latest: true
           cache: npm
-      - run: npm ci
+      - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run check
       - name: Generate configuration
         run: npm run configure
@@ -60,11 +61,14 @@ jobs:
           ];
           const secrets = Object.fromEntries(names.map((name) => {
             const value = process.env[name];
-            if (!value?.trim()) throw new Error(`Missing GitHub secret: ${name}`);
+            if (!value?.trim()) throw new Error(`GitHub Secret ${name} が設定されていません。`);
             return [name, value];
           }));
           if (!process.env.CLOUDFLARE_API_TOKEN?.trim()) {
-            throw new Error("Missing GitHub secret: CLOUDFLARE_API_TOKEN");
+            throw new Error("GitHub Secret CLOUDFLARE_API_TOKEN が設定されていません。");
+          }
+          if (!/^[UCR][a-f0-9]{32}$/i.test(secrets.LINE_RECIPIENT_ID)) {
+            throw new Error("LINE_RECIPIENT_ID は U・C・R のいずれかと32桁の16進数で指定してください。");
           }
           await writeFile(process.env.RUNTIME_SECRETS_FILE, JSON.stringify(secrets), { mode: 0o600 });
           NODE

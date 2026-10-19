@@ -10,7 +10,7 @@ export async function pushMessage(
   retryKey: string,
 ): Promise<PushResult> {
   if (text.length === 0 || text.length > 5_000) {
-    throw new Error("LINE message must contain between 1 and 5000 UTF-16 code units");
+    throw new Error("LINE の本文は UTF-16 コード単位で1〜5000文字にしてください。");
   }
 
   try {
