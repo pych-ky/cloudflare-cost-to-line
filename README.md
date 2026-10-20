@@ -35,7 +35,7 @@ Worker 名を変えても旧 Worker の Cron は残る。
 ## 実行
 
 main へのマージ後、CI の検証成功に続いて同じコミットを本番へ自動反映する。
-この CI では、再実行するコミットが最新 main と一致しなければデプロイを見送る。
+この CI では、実行対象のコミットが最新 main と一致しなければデプロイを見送る。
 再デプロイには最新の CI を使い、旧 Deploy の実行履歴を再実行しない。
 
 設定変更は [wrangler.json](wrangler.json) または GitHub の `production` Environment で行う。
@@ -50,6 +50,7 @@ GitHub Actions で `main` を対象に手動実行する場合:
 CI は反映後の稼働版100%・Cron・設定を照合し、結果を Summary と `deployment-after-実行ID-試行番号` Artifact に残す。
 反映後の照合失敗は本番へのアップロードを取り消さないため、記録した版とエラーを確認する。
 課金APIの取得・LINE配信の成功までは確認しない。
+
 手動通知は日次の重複判定とは独立する。
 Worker・Cron の稼働確認にはならない。
 

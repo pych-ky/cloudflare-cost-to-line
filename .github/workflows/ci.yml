@@ -49,6 +49,7 @@ jobs:
     environment: production
     concurrency:
       group: production-deploy
+      queue: max
       cancel-in-progress: false
     env:
       CLOUDFLARE_SEND_METRICS: "false"
