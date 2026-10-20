@@ -1,3 +1,5 @@
+// 料金の手動通知
+
 import template from "../wrangler.json" with { type: "json" };
 import { setTimeout as delay } from "node:timers/promises";
 import { getDailyMessage } from "../src/billing.ts";
@@ -12,12 +14,8 @@ try {
   };
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
   const recipient = process.env.LINE_RECIPIENT_ID?.trim();
-  if (!token) {
-    console.error("LINE_CHANNEL_ACCESS_TOKEN が設定されていません。");
-    throw new Error();
-  }
-  if (!/^[UCR][a-f0-9]{32}$/i.test(recipient ?? "")) {
-    console.error("LINE_RECIPIENT_ID の形式が不正です。");
+  if (!token || !/^[UCR][a-f0-9]{32}$/i.test(recipient ?? "")) {
+    console.error(!token ? "LINE_CHANNEL_ACCESS_TOKEN が設定されていません。" : "LINE_RECIPIENT_ID の形式が不正です。");
     throw new Error();
   }
   const now = Date.now();

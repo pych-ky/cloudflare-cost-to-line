@@ -1,3 +1,5 @@
+# 本番デプロイ
+
 name: Deploy
 
 on:
@@ -30,8 +32,7 @@ jobs:
           cache: npm
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run check
-      - name: Generate configuration
-        run: npm run configure
+      - run: npm run configure
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WORKER_NAME: ${{ vars.WORKER_NAME }}
@@ -43,7 +44,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/capture-deployment.mjs wrangler.generated.json "$RUNNER_TEMP/deployment-before.json"
-      - name: Save rollback record before deployment
+      - name: Save rollback record
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deployment-before-${{ github.run_id }}-${{ github.run_attempt }}
@@ -58,22 +59,22 @@ jobs:
           LINE_RECIPIENT_ID: ${{ secrets.LINE_RECIPIENT_ID }}
         run: |
           umask 077
-          runtime_secrets_file="$(mktemp --suffix=.json "$RUNNER_TEMP/cloudflare-line-secrets.XXXXXX")"
-          trap 'rm -f "$runtime_secrets_file"' EXIT
-          export RUNTIME_SECRETS_FILE="$runtime_secrets_file"
+          RUNTIME_SECRETS_FILE="$(mktemp --suffix=.json "$RUNNER_TEMP/cloudflare-line-secrets.XXXXXX")"
+          trap 'rm -f "$RUNTIME_SECRETS_FILE"' EXIT
+          export RUNTIME_SECRETS_FILE
           node --input-type=module <<'NODE'
           import { writeFile } from "node:fs/promises";
 
-          const names = [
+          const secrets = {};
+          for (const name of [
             "BILLING_API_TOKEN",
             "LINE_CHANNEL_ACCESS_TOKEN",
             "LINE_RECIPIENT_ID",
-          ];
-          const secrets = Object.fromEntries(names.map((name) => {
+          ]) {
             const value = process.env[name];
             if (!value?.trim()) throw new Error(`GitHub Secret ${name} が設定されていません。`);
-            return [name, value];
-          }));
+            secrets[name] = value;
+          }
           if (!process.env.CLOUDFLARE_API_TOKEN?.trim()) {
             throw new Error("GitHub Secret CLOUDFLARE_API_TOKEN が設定されていません。");
           }
@@ -82,4 +83,4 @@ jobs:
           }
           await writeFile(process.env.RUNTIME_SECRETS_FILE, JSON.stringify(secrets), { mode: 0o600 });
           NODE
-          ./node_modules/.bin/wrangler deploy --config wrangler.generated.json --secrets-file "$runtime_secrets_file"
+          ./node_modules/.bin/wrangler deploy --config wrangler.generated.json --secrets-file "$RUNTIME_SECRETS_FILE"
