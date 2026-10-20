@@ -5,11 +5,11 @@
   "type": "module",
   "engines": { "node": ">=24", "npm": ">=11.16.0" },
   "scripts": {
-    "dev": "wrangler dev --local",
-    "check": "tsc",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "notify:now": "node scripts/notify-now.mjs",
-    "configure": "node scripts/configure.mjs"
+    "check": "tsc",
+    "configure": "node scripts/configure.mjs",
+    "dev": "wrangler dev --local",
+    "notify:now": "node scripts/notify-now.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261009.1",

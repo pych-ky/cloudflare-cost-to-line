@@ -1,8 +1,11 @@
+// LINE通知
+
 type PushResult =
   | { kind: "accepted" }
   | { kind: "retry"; status: number | null }
   | { kind: "failed"; status: number };
 
+// Retry-Keyで送信し結果を分類
 export async function pushMessage(
   accessToken: string,
   recipientId: string,

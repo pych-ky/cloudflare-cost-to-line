@@ -1,11 +1,16 @@
-node_modules/
-dist/
-.wrangler/
+# ローカルファイルの除外
+
 .dev.vars*
 .env*
-wrangler.generated.json
-verification/
-secrets/
 credentials/
+secrets/
+
+node_modules/
+
+.wrangler/
+dist/
+verification/
+wrangler.generated.json
+
 *.log
 .DS_Store

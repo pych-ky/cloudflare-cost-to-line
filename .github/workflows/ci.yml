@@ -1,3 +1,5 @@
+# 型検査とローカルビルド
+
 name: CI
 
 on:
@@ -27,8 +29,7 @@ jobs:
           cache: npm
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run check
-      - name: Generate configuration
-        run: npm run configure
+      - run: npm run configure
         env:
           CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000"
       - run: npm run build -- --config wrangler.generated.json

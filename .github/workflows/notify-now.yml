@@ -1,3 +1,5 @@
+# 手動通知
+
 name: Send cost notification now
 
 on:
@@ -23,8 +25,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-      - name: Fetch current costs and notify LINE
-        run: npm run notify:now
+      - run: npm run notify:now
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BILLING_API_TOKEN: ${{ secrets.BILLING_API_TOKEN }}
