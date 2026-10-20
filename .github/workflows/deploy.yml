@@ -56,6 +56,7 @@ jobs:
           path: ${{ runner.temp }}/deployment-before.json
           if-no-files-found: error
       - name: Deploy code and runtime secrets
+        id: deploy
         shell: bash
         env:
           WRANGLER_LOG: ${{ inputs.debug && 'debug' || 'log' }}
@@ -91,3 +92,8 @@ jobs:
           await writeFile(process.env.RUNTIME_SECRETS_FILE, JSON.stringify(secrets), { mode: 0o600 });
           NODE
           ./node_modules/.bin/wrangler deploy --config wrangler.generated.json --secrets-file "$RUNTIME_SECRETS_FILE"
+      - name: Diagnose dashboard API permissions
+        if: failure() && inputs.debug && steps.deploy.outcome == 'failure'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/diagnose-deploy.mjs
