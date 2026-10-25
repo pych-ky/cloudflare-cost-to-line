@@ -16,11 +16,11 @@ if (!process.env.CLOUDFLARE_API_TOKEN?.trim() || !/^[a-f\d]{40}$/i.test(process.
 }
 let records;
 try {
-  records = (await readFile(wranglerOutputPath, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+  records = (await readFile(wranglerOutputPath, "utf8")).trim().split("\n").map(/* 出力行の JSON 復元 */ line => JSON.parse(line));
 } catch {
   throw new Error("Wrangler のデプロイ結果を読み取れません。");
 }
-const deployed = records.filter(record => record.type === "deploy");
+const deployed = records.filter(/* デプロイ結果の抽出 */ record => record.type === "deploy");
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 if (deployed.length !== 1 || deployed[0].version !== 1 || deployed[0].worker_name !== workerName ||
     !uuid.test(deployed[0].version_id ?? "")) {
@@ -36,6 +36,7 @@ const record = {
 // 照合に失敗してもアップロード済みの版を残す
 await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`);
 
+// 本番の稼働情報を取得
 // 応答本文や認証情報をエラーに含めない
 async function get(path) {
   try {
@@ -54,7 +55,7 @@ async function get(path) {
 }
 
 const { deployments } = await get("deployments");
-if (!Array.isArray(deployments) || deployments.some(item => !Number.isFinite(Date.parse(item?.created_on)))) {
+if (!Array.isArray(deployments) || deployments.some(/* 作成日時の検証 */ item => !Number.isFinite(Date.parse(item?.created_on)))) {
   throw new Error("本番の deployment 一覧が不正です。");
 }
 const latest = deployments[0];
@@ -67,20 +68,20 @@ const settings = await get("settings");
 const bindings = settings.bindings;
 if (!Array.isArray(bindings)) throw new Error("本番の bindings が不正です。");
 for (const [name, value] of Object.entries(config.vars)) {
-  const matches = bindings.filter(binding => binding.name === name);
+  const matches = bindings.filter(/* 対象 Variable の抽出 */ binding => binding.name === name);
   if (matches.length !== 1 || matches[0].type !== "plain_text" || matches[0].text !== value) {
     throw new Error(`本番の Variable ${name} が設定と一致しません。`);
   }
 }
 for (const { name, class_name: className } of config.durable_objects.bindings) {
-  const matches = bindings.filter(binding => binding.name === name);
+  const matches = bindings.filter(/* 対象 Durable Object binding の抽出 */ binding => binding.name === name);
   if (matches.length !== 1 || matches[0].type !== "durable_object_namespace" ||
       (matches[0].class_name !== undefined && matches[0].class_name !== className)) {
     throw new Error(`本番の Durable Object binding ${name} が設定と一致しません。`);
   }
 }
 for (const name of ["BILLING_API_TOKEN", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_RECIPIENT_ID"]) {
-  if (bindings.filter(binding => binding.name === name && binding.type === "secret_text").length !== 1) {
+  if (bindings.filter(/* 対象 Secret の抽出 */ binding => binding.name === name && binding.type === "secret_text").length !== 1) {
     throw new Error(`本番の Secret ${name} がありません。`);
   }
 }
@@ -91,7 +92,7 @@ if (settings.compatibility_date !== config.compatibility_date ||
 }
 
 const schedules = await get("schedules");
-const crons = schedules.schedules?.map(schedule => schedule.cron).sort();
+const crons = schedules.schedules?.map(/* Cron 式の抽出 */ schedule => schedule.cron).sort();
 if (JSON.stringify(crons) !== JSON.stringify([...config.triggers.crons].sort())) {
   throw new Error("本番の Cron が設定と一致しません。");
 }

@@ -4,8 +4,8 @@ Cloudflare の当月従量料金・月末予測を LINE に日次・手動通知
 
 ## 設定
 
-GitHub の `production` Environment に登録し、許可ブランチを `main` のみにする。
-main の保護ルールでは GitHub Actions の `check` 成功を必須にする。
+- GitHub の `production` Environment に登録し、許可ブランチを `main` のみにする
+- main の保護ルールでは GitHub Actions の `check` 成功を必須にする
 
 ### Secrets
 
@@ -16,11 +16,12 @@ main の保護ルールでは GitHub Actions の `check` 成功を必須にす�
 - `LINE_RECIPIENT_ID`: 友だち追加済みの[ユーザーID](https://developers.line.biz/en/docs/messaging-api/getting-user-ids/)／公式アカウント参加済みの[グループID](https://developers.line.biz/en/docs/messaging-api/group-chats/)
 
 通知先は通常の LINE ID ではなく、`U`・`C`・`R`＋32桁の16進表記。
-グループID取得用の Webhook 受信機能は別途用意する。
+
+- グループID取得用の Webhook 受信機能は別途用意する
 
 ### Variables（任意）
 
-[wrangler.json](wrangler.json) の既定値を上書きする場合に登録する。
+- [wrangler.json](wrangler.json) の既定値を上書きする場合に登録する
 
 - `WORKER_NAME`: デプロイ先
 - `TIME_ZONE`: 集計月・通知日付のタイムゾーン
@@ -36,19 +37,24 @@ Worker 名を変えても旧 Worker の Cron は残る。
 
 main へのマージ後、CI の検証成功に続いて同じコミットを本番へ自動反映する。
 この CI では、実行対象のコミットが最新 main と一致しなければデプロイを見送る。
-再デプロイには最新の CI を使い、旧 Deploy の実行履歴を再実行しない。
 
-設定変更は [wrangler.json](wrangler.json) または GitHub の `production` Environment で行う。
-通常のコード・設定・Secrets 更新では Cloudflare Dashboard から Worker を編集しない。
+- 再デプロイには最新の CI を使う
+- 旧 Deploy の実行履歴を再実行しない
+
+- 設定変更は [wrangler.json](wrangler.json) または GitHub の `production` Environment で行う
+- 通常のコード・設定・Secrets 更新では Cloudflare Dashboard から Worker を編集しない
+
 Dashboard で編集すると、次回 Wrangler デプロイの設定比較に追加の読み取り権限が必要になる場合がある。
 
-GitHub Actions で `main` を対象に手動実行する場合:
+- GitHub Actions で `main` を対象に手動実行する場合:
 
-- CI: GitHub の設定・Secrets 変更後の反映や再デプロイ。失敗時の API 診断は `debug` を有効にする
-- Send cost notification now: デプロイ不要で GitHub の設定から毎回送信
+  - CI: GitHub の設定・Secrets 変更後の反映や再デプロイ。失敗時の API 診断は `debug` を有効にする
+  - Send cost notification now: デプロイ不要で GitHub の設定から毎回送信
 
 CI は反映後の稼働版100%・Cron・設定を照合し、結果を Summary と `deployment-after-実行ID-試行番号` Artifact に残す。
-反映後の照合失敗は本番へのアップロードを取り消さないため、記録した版とエラーを確認する。
+
+- 反映後の照合失敗は本番へのアップロードを取り消さないため、記録した版とエラーを確認する
+
 課金APIの取得・LINE配信の成功までは確認しない。
 
 手動通知は日次の重複判定とは独立する。
@@ -65,7 +71,8 @@ CI のデプロイは稼働版を `deployment-before-実行ID-試行番号` Arti
 
 `deployment: null` は初回のため復旧先なし。
 Durable Object の保存状態・送信済み通知・GitHub Secrets は戻らない。
-Secrets 変更や Durable Object 移行による[復旧制限](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/#limits)で拒否された場合は、強制せず現在の設定・データと互換な修正を再デプロイする。
+
+- Secrets 変更や Durable Object 移行による[復旧制限](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/#limits)で拒否された場合は、強制せず現在の設定・データと互換な修正を再デプロイする
 
 ## 料金・通知
 
@@ -97,26 +104,27 @@ API対象外では、契約・対象期間の明細がともに空と確認で�
 
 ## ローカル実行
 
-Node.js・npm の要件は [engines](package.json) を参照する。
-リポジトリ直下の `.dev.vars` に `CLOUDFLARE_API_TOKEN` 以外の Secrets を設定する。
-`CLOUDFLARE_ACCOUNT_ID` は `ACCOUNT_ID` に読み替える。
+- Node.js・npm の要件は [engines](package.json) を参照する
+- リポジトリ直下の `.dev.vars` に `CLOUDFLARE_API_TOKEN` 以外の Secrets を設定する
+- `CLOUDFLARE_ACCOUNT_ID` は `ACCOUNT_ID` に読み替える
 
 ```sh
 npm ci --engine-strict --strict-allow-scripts
 npm run dev
 ```
 
-起動後、別のターミナルで日次処理を実行する。
+- 起動後、別のターミナルで日次処理を実行する
 
 ```sh
 curl http://localhost:8787/cdn-cgi/local/scheduled
 ```
 
-実際に LINE へ送信するため、検証用宛先を使う。
+- 実際に LINE へ送信するため、検証用宛先を使う
+
 `.wrangler/state/` に状態を保存し、同日の処理中・送信済み通知は再起動後も抑止する。
 
 ### 依存関係の更新
 
-`npm ci --engine-strict --strict-allow-scripts` を維持し、Dependabot PR でも更新差分とインストールスクリプトを都度確認する。
-`ESTRICTALLOWSCRIPTS` の場合は `npm install-scripts ls` で未判断のパッケージを確認し、必要性と内容を確認してから `allowScripts` を対象バージョン限定で同じ PR 内に更新する。
-Wrangler とその依存も同じ扱いとし、パッケージ単位の恒常的な許可や検査の無効化は行わない。
+- `npm ci --engine-strict --strict-allow-scripts` を維持し、Dependabot PR でも更新差分とインストールスクリプトを都度確認する
+- `ESTRICTALLOWSCRIPTS` の場合は `npm install-scripts ls` で未判断のパッケージを確認し、必要性と内容を確認してから `allowScripts` を対象バージョン限定で同じ PR 内に更新する
+- Wrangler とその依存も同じ扱いとし、パッケージ単位の恒常的な許可や検査の無効化は行わない
