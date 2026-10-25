@@ -57,6 +57,7 @@ Worker・Cron の稼働確認にはならない。
 ### コードの復旧
 
 CI のデプロイは稼働版を `deployment-before-実行ID-試行番号` Artifact に保存できなければ停止する。
+復旧用の Artifact は14日間保持する。
 
 1. 対象 Artifact の `deployment-before.json` で `worker_name` を確認する。
 2. Cloudflare Dashboard の対象アカウントの Worker → Deployments で、`deployment.versions` の `version_id` から正常な版を選び、Rollback する。

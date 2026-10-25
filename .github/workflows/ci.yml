@@ -32,7 +32,7 @@ jobs:
         with:
           node-version: "24"
           check-latest: true
-          cache: npm
+          package-manager-cache: false
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run check
       - run: for script in scripts/*.mjs; do node --check "$script"; done
@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: "24"
           check-latest: true
-          cache: npm
+          package-manager-cache: false
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run configure
         env:
@@ -83,6 +83,7 @@ jobs:
           name: deployment-before-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/deployment-before.json
           if-no-files-found: error
+          retention-days: 14
       - name: Check latest main
         id: current
         env:
@@ -147,6 +148,7 @@ jobs:
           name: deployment-after-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/deployment-after.json
           if-no-files-found: error
+          retention-days: 14
       - name: Report verification failure
         if: failure() && steps.verify.outcome == 'failure'
         run: echo "本番へのアップロード後の確認に失敗しました。本番は更新済みの可能性があります。自動復旧は行っていません。" >> "$GITHUB_STEP_SUMMARY"
