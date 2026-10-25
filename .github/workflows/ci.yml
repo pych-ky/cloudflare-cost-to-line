@@ -32,6 +32,7 @@ jobs:
         with:
           node-version: "24"
           check-latest: true
+          package-manager-cache: false
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run check
       - run: for script in scripts/*.mjs; do node --check "$script"; done
@@ -62,6 +63,7 @@ jobs:
         with:
           node-version: "24"
           check-latest: true
+          package-manager-cache: false
       - run: npm ci --engine-strict --strict-allow-scripts
       - run: npm run configure
         env:
