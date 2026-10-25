@@ -217,7 +217,7 @@ async function getMonthlyReport(
   timeZone: string,
   fixedMonthlyCostUsd: number,
 ): Promise<string> {
-  check(Number.isFinite(time) && Number.isFinite(fixedMonthlyCostUsd) && fixedMonthlyCostUsd >= 0, "日付または固定費設定が不正です。");
+  check(Number.isFinite(time), "日付または固定費設定が不正です。");
   const date = localDate(time, timeZone).split("-");
   const year = Number(date[0]);
   const month = Number(date[1]);
