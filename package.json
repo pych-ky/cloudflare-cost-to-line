@@ -12,13 +12,13 @@
     "notify:now": "node scripts/notify-now.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261030.1",
+    "@cloudflare/workers-types": "5.20261031.1",
     "typescript": "7.0.2",
-    "wrangler": "4.151.1"
+    "wrangler": "4.156.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
     "fsevents@2.3.3": false,
-    "workerd@1.20261012.1": true
+    "workerd@1.20261023.1": true
   }
 }
