@@ -5,20 +5,13 @@ import { getDailyMessage } from './billing.ts';
 import { localDate, type Env } from './config.ts';
 import { pushMessage } from './line.ts';
 
-interface Delivery {
-  id: string;
-  text: string;
-  recipient: string;
-  retryKey: string;
-}
-
 interface Job {
   kind: 'daily';
   scheduledTime: number;
   nextAttemptAt: number;
   deadline: number;
   attempts: number;
-  delivery?: Delivery;
+  delivery?: { text: string; retryKey: string };
 }
 
 const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -44,6 +37,7 @@ export class NotificationStore extends DurableObject<Env> {
   // 送信・再試行と古い記録の回収
   async alarm(): Promise<void> {
     const { storage } = this.ctx;
+    // 旧機能の保存値の回収
     await storage.delete('budget-request');
     for (const [key, job] of await storage.list<Job>({ prefix: 'job:' })) {
       // 旧通知ジョブの回収
@@ -57,28 +51,25 @@ export class NotificationStore extends DurableObject<Env> {
         await storage.delete(key);
         continue;
       }
-      const preparingDelivery = job.delivery === undefined;
       try {
         if (!job.delivery) {
-          job.delivery = await this.prepareDelivery(key, job);
+          job.delivery = {
+            text: await getDailyMessage(this.env, job.scheduledTime, job.attempts),
+            retryKey: crypto.randomUUID(),
+          };
           // 停止後も再送内容を固定
           await storage.put(key, job);
         }
-        if (Date.now() >= job.deadline) {
-          if (preparingDelivery) delete job.delivery;
-          await this.retry(key, job);
-          continue;
-        }
         const result = await pushMessage(
           this.env.LINE_CHANNEL_ACCESS_TOKEN,
-          job.delivery.recipient,
+          this.env.LINE_RECIPIENT_ID,
           job.delivery.text,
           job.delivery.retryKey,
         );
         if (result.kind === 'accepted') {
           // 受理記録とジョブ削除
           await storage.transaction(async storage => {
-            await storage.put(`done:${job.delivery!.id}`, Date.now());
+            await storage.put(`done:${key.slice('job:'.length)}`, Date.now());
             await storage.delete(key);
           });
           console.log('LINE が通知を受理しました。');
@@ -94,33 +85,17 @@ export class NotificationStore extends DurableObject<Env> {
         await this.retry(key, job);
       }
     }
+    // exhausted:・security-day: は旧機能の記録
     for (const prefix of ['done:', 'exhausted:', 'security-day:']) {
       for (const [key, timestamp] of await storage.list<number>({ prefix })) {
         if (timestamp < Date.now() - RETENTION_MS) await storage.delete(key);
       }
     }
-    // 並行登録分を含む次回予約
-    await storage.transaction(async storage => {
-      const pending = await storage.list<Job>({ prefix: 'job:' });
-      if (pending.size > 0) {
-        await storage.setAlarm(Math.min(...Array.from(pending.values(), /* 再試行時刻の抽出 */ job => job.nextAttemptAt)));
-      }
-    });
-  }
-
-  // 再送用の本文・宛先・キーの生成
-  private async prepareDelivery(key: string, job: Job): Promise<Delivery> {
-    const { LINE_CHANNEL_ACCESS_TOKEN: token, LINE_RECIPIENT_ID: recipient } = this.env;
-    if (!token || !/^[UCR][a-f0-9]{32}$/i.test(recipient)) {
-      console.error(!token ? 'LINE_CHANNEL_ACCESS_TOKEN が設定されていません。' : 'LINE_RECIPIENT_ID の形式が不正です。');
-      throw new Error();
+    // 送信中に登録されたジョブも含めて次回を予約
+    const pending = await storage.list<Job>({ prefix: 'job:' });
+    if (pending.size > 0) {
+      await storage.setAlarm(Math.min(...Array.from(pending.values(), /* 再試行時刻の抽出 */ job => job.nextAttemptAt)));
     }
-    return {
-      id: key.slice('job:'.length),
-      text: await getDailyMessage(this.env, job.scheduledTime, job.attempts),
-      recipient,
-      retryKey: crypto.randomUUID(),
-    };
   }
 
   // 期限内で指数バックオフ

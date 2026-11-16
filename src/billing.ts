@@ -1,10 +1,29 @@
 // Cloudflare 料金の取得・予測
 
-import { billingOptions, localDate, usdSetting, type Env } from "./config.ts";
+import { localDate, usdSetting, type Env } from "./config.ts";
 
 const DAY_MS = 86_400_000;
 
-type BillingOptions = ReturnType<typeof billingOptions>;
+type BillingEnv = Pick<Env, "ACCOUNT_ID" | "BILLING_API_TOKEN">;
+
+interface UsageInfo {
+  covered: boolean;
+  subscriptions: { id: string; start_timestamp: string; end_timestamp?: string | null }[];
+}
+
+interface UsageItem {
+  BillingCurrency: string;
+  ChargeCategory: string;
+  ContractedCost: number;
+  SubscriptionId?: string | null;
+  ChargePeriodStart: string;
+  ChargePeriodEnd: string;
+  ServiceName: string;
+  ZoneId?: string | null;
+  ConsumedUnit?: string | null;
+  PricingUnit?: string | null;
+  ChargeDescription?: string | null;
+}
 
 interface Subscription {
   id: string;
@@ -20,12 +39,11 @@ interface UsageRow {
 }
 
 class BillingError extends Error {
-  readonly kind: "not-covered" | "unsupported" | "unavailable";
+  readonly kind: "unsupported" | "unavailable";
 
-  // エラー種別を保持
+  // 再試行の要否を保持
   constructor(message: string, kind: BillingError["kind"] = "unavailable") {
     super(message);
-    this.name = "BillingError";
     this.kind = kind;
   }
 }
@@ -35,23 +53,10 @@ function check(condition: unknown, message: string, kind: BillingError["kind"] =
   if (!condition) throw new BillingError(message, kind);
 }
 
-// オブジェクトを検証
-function object(value: unknown): Record<string, unknown> {
-  check(typeof value === "object" && value !== null && !Array.isArray(value), "応答形式が未対応です。", "unsupported");
-  return value as Record<string, unknown>;
-}
-
-// 必須文字列を検証
-function string(value: unknown): string {
-  check(typeof value === "string" && value, "必要な項目がありません。");
-  return value;
-}
-
 // 日時をミリ秒に変換
-function timestamp(value: unknown): number {
-  const text = string(value);
-  const parsed = Date.parse(text);
-  check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(text) && Number.isFinite(parsed), "日付形式が未対応です。", "unsupported");
+function timestamp(value: string): number {
+  const parsed = Date.parse(value);
+  check(Number.isFinite(parsed), "日付形式が未対応です。", "unsupported");
   return parsed;
 }
 
@@ -60,83 +65,56 @@ function dateText(time: number): string {
   return new Date(time).toISOString().slice(0, 10);
 }
 
-// 料金応答を取得
-async function request(options: BillingOptions, path: string): Promise<Record<string, unknown>> {
+// 料金 API の結果を取得
+async function request<T>(env: BillingEnv, path: string): Promise<T> {
   try {
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${options.accountId}${path}`, {
-      headers: { Authorization: `Bearer ${options.apiToken}` },
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}${path}`, {
+      headers: { Authorization: `Bearer ${env.BILLING_API_TOKEN}` },
       signal: AbortSignal.timeout(10_000),
     });
     check(response.ok, `料金 API: HTTP ${response.status}`);
-    const envelope = object(await response.json());
+    const envelope = await response.json<{ success: boolean; result: T }>();
     check(envelope.success === true, "料金 API の取得に失敗しました。");
-    return envelope;
+    return envelope.result;
   } catch (error) {
     if (error instanceof BillingError) throw error;
     throw new BillingError("料金 API の通信・応答読取に失敗しました。");
   }
 }
 
-// ページ情報込みで空を判定
-function isEmptyList(envelope: Record<string, unknown>): boolean {
-  check(Array.isArray(envelope.result), "契約・料金明細一覧の形式が未対応です。", "unsupported");
-  if (envelope.result.length > 0) return false;
-  if (envelope.result_info === undefined) return true;
-  const page = object(envelope.result_info);
-  return (page.count === undefined || page.count === 0)
-    && (page.total_count === undefined || page.total_count === 0)
-    && (page.total_pages === undefined || page.total_pages === 0 || page.total_pages === 1)
-    && (page.page === undefined || page.page === 1);
+// 一覧が空かを判定
+async function isEmptyList(env: BillingEnv, path: string): Promise<boolean> {
+  const result = await request<unknown>(env, path);
+  return Array.isArray(result) && result.length === 0;
 }
 
 // 契約を取得
-async function getSubscriptions(options: BillingOptions): Promise<Subscription[] | null> {
-  const info = object((await request(options, "/billable-usage/info")).result);
-  check(typeof info.covered === "boolean", "料金 API の対象判定を読み取れません。", "unsupported");
-  check(Array.isArray(info.subscriptions), "契約情報の形式が未対応です。", "unsupported");
+async function getSubscriptions(env: BillingEnv): Promise<Subscription[] | null> {
+  const info = await request<UsageInfo>(env, "/billable-usage/info");
   if (!info.covered) {
-    check(info.subscriptions.length === 0, "料金 API の対象外です。", "not-covered");
+    check(info.subscriptions.length === 0, "料金 API の対象外です。", "unsupported");
     return null;
   }
-  const subscriptions = info.subscriptions.map(/* 契約を検証 */ (value: unknown) => {
-    const item = object(value);
-    const subscription = {
-      id: string(item.id),
-      start: timestamp(item.start_timestamp),
-      end: item.end_timestamp == null ? null : timestamp(item.end_timestamp),
-    };
-    check(subscription.end === null || subscription.end >= subscription.start, "契約期間が不正です。");
-    return subscription;
-  });
-  check(new Set(subscriptions.map(/* 契約IDを抽出 */ (subscription) => subscription.id)).size === subscriptions.length, "契約情報が重複しています。");
-  return subscriptions;
+  return info.subscriptions.map(/* 契約期間を変換 */ (item) => ({
+    id: item.id,
+    start: timestamp(item.start_timestamp),
+    end: item.end_timestamp == null ? null : timestamp(item.end_timestamp),
+  }));
 }
 
 // 日次明細を取得
-async function getUsage(options: BillingOptions, subscriptions: readonly Subscription[], path: string): Promise<UsageRow[]> {
-  const result = (await request(options, path)).result;
-  check(Array.isArray(result), "料金明細の形式が未対応です。", "unsupported");
-  const ids = new Set(subscriptions.map(/* 契約IDを抽出 */ (subscription) => subscription.id));
-  const seen = new Set<string>();
-  return result.map(/* 明細を検証 */ (value: unknown) => {
-    const item = object(value);
+async function getUsage(env: BillingEnv, subscriptions: readonly Subscription[], path: string): Promise<UsageRow[]> {
+  const items = await request<UsageItem[]>(env, path);
+  return items.map(/* 明細を検証 */ (item) => {
     check(item.BillingCurrency === "USD" && item.ChargeCategory === "Usage", "USD の従量料金以外は未対応です。", "unsupported");
-    check(typeof item.ContractedCost === "number" && Number.isFinite(item.ContractedCost) && item.ContractedCost >= 0, "明細金額が不正です。");
-    const subscriptionId = item.SubscriptionId == null
-      ? subscriptions.length === 1 ? subscriptions[0]!.id : null
-      : string(item.SubscriptionId);
-    check(subscriptionId === null || ids.has(subscriptionId), "料金明細を契約に対応付けられません。");
+    check(Number.isFinite(item.ContractedCost) && item.ContractedCost >= 0, "明細金額が不正です。");
     const start = timestamp(item.ChargePeriodStart);
-    const end = timestamp(item.ChargePeriodEnd);
-    const billingStart = timestamp(item.BillingPeriodStart);
-    check(start % DAY_MS === 0 && end - start === DAY_MS && billingStart < end, "UTC の日次料金以外は未対応です。", "unsupported");
+    check(start % DAY_MS === 0 && timestamp(item.ChargePeriodEnd) - start === DAY_MS, "UTC の日次料金以外は未対応です。", "unsupported");
+    const subscriptionId = item.SubscriptionId ?? (subscriptions.length === 1 ? subscriptions[0]!.id : null);
     const seriesKey = JSON.stringify([
-      subscriptionId, string(item.ServiceName), item.ZoneId ?? "",
+      subscriptionId, item.ServiceName, item.ZoneId ?? "",
       item.ConsumedUnit ?? "", item.PricingUnit ?? "", item.ChargeDescription ?? "",
     ]);
-    const rowKey = JSON.stringify([seriesKey, start, billingStart]);
-    check(!seen.has(rowKey), "料金明細が重複しています。");
-    seen.add(rowKey);
     return { amountUsd: item.ContractedCost, start, subscriptionId, seriesKey };
   });
 }
@@ -197,7 +175,6 @@ function forecastMonthlyCost(rows: readonly UsageRow[], subscriptions: readonly 
 
 // USD 表記に整形
 function usd(amount: number): string {
-  check(Number.isFinite(amount) && amount >= 0, "料金合計が不正です。");
   if (amount > 0 && amount < 0.01) return "$0.01 USD 未満";
   return `$${amount.toFixed(2)} USD`;
 }
@@ -212,30 +189,28 @@ function report(period: string, cost: string, forecast: string, details: string[
 
 // 月次報告を生成
 async function getMonthlyReport(
-  options: BillingOptions,
+  env: BillingEnv,
   time: number,
   timeZone: string,
   fixedMonthlyCostUsd: number,
 ): Promise<string> {
-  check(Number.isFinite(time), "日付または固定費設定が不正です。");
   const date = localDate(time, timeZone).split("-");
   const year = Number(date[0]);
   const month = Number(date[1]);
   const period = `${year}-${date[1]}`;
   const monthStart = Date.UTC(year, month - 1, 1);
   const monthEnd = Date.UTC(year, month, 1);
-  const subscriptions = await getSubscriptions(options);
+  const subscriptions = await getSubscriptions(env);
   // 請求起算日・月初の時差を含め前月から取得
   const path = `/billable-usage?${new URLSearchParams({ from: dateText(Date.UTC(year, month - 2, 1)), to: dateText(time) })}`;
   if (subscriptions === null) {
-    check(isEmptyList(await request(options, "/subscriptions")), "契約なしを確認できず、0ドルと判定できません。", "not-covered");
-    check(isEmptyList(await request(options, path)), "料金明細なしを確認できず、0ドルと判定できません。", "not-covered");
+    check(await isEmptyList(env, "/subscriptions"), "契約なしを確認できず、0ドルと判定できません。", "unsupported");
+    check(await isEmptyList(env, path), "料金明細なしを確認できず、0ドルと判定できません。", "unsupported");
     const details = ["判定根拠: 契約・料金明細なし"];
     if (fixedMonthlyCostUsd > 0) details.push(`固定月額（設定値）: ${usd(fixedMonthlyCostUsd)}`);
-    console.log("料金APIの対象外で、契約・対象期間の明細が空であることを確認しました。");
     return report(period, "0ドル", "算出不可（日別データなし）", details);
   }
-  const rows = await getUsage(options, subscriptions, path);
+  const rows = await getUsage(env, subscriptions, path);
   const { recordedUsd, recordedComplete, estimatedUsd, dataThrough, hasMonthlyData, unavailableReason }
     = forecastMonthlyCost(rows, subscriptions, monthStart, monthEnd, time);
   const cost = !hasMonthlyData ? "不明（当月データなし）" : !recordedComplete ? "不明（欠測あり）" : usd(recordedUsd);
@@ -270,14 +245,10 @@ export async function getDailyMessage(
   attempts: number,
 ): Promise<string> {
   try {
-    return await getMonthlyReport(
-      billingOptions(env), new Date(scheduledTime).getTime(), env.TIME_ZONE,
-      usdSetting(env.MONTHLY_FIXED_COST_USD),
-    );
+    return await getMonthlyReport(env, scheduledTime, env.TIME_ZONE, usdSetting(env.MONTHLY_FIXED_COST_USD));
   } catch (error) {
     const billingError = error instanceof BillingError ? error : null;
-    if ((!billingError || billingError.kind === "unavailable") && attempts < 2) throw error;
-    if (billingError?.kind === "not-covered") console.log("料金API対象外のため、料金・予測は不明です。");
+    if (billingError?.kind !== "unsupported" && attempts < 2) throw error;
     return report(localDate(scheduledTime, env.TIME_ZONE).slice(0, 7), "不明（0ドルかは未確認）", "算出不可", [
       `理由: ${billingError?.message ?? "料金の取得・集計に失敗しました。"}`,
     ]);

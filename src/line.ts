@@ -12,10 +12,6 @@ export async function pushMessage(
   text: string,
   retryKey: string,
 ): Promise<PushResult> {
-  if (text.length === 0 || text.length > 5_000) {
-    throw new Error("LINE の本文は UTF-16 コード単位で1〜5000文字にしてください。");
-  }
-
   try {
     const response = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",

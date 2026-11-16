@@ -1,4 +1,4 @@
-// 設定検証と現地日付
+// 設定の型・固定費の検証・現地日付
 
 import type { NotificationStore } from './notifications.ts';
 
@@ -12,24 +12,12 @@ export interface Env {
   NOTIFICATIONS: DurableObjectNamespace<NotificationStore>;
 }
 
-// 料金API設定の検証
-export function billingOptions(env: Pick<Env, 'ACCOUNT_ID' | 'BILLING_API_TOKEN'>) {
-  if (!/^[a-f0-9]{32}$/i.test(env.ACCOUNT_ID) || !env.BILLING_API_TOKEN) {
-    throw new Error('Cloudflare の料金参照設定が不足しています。');
-  }
-  return { accountId: env.ACCOUNT_ID, apiToken: env.BILLING_API_TOKEN };
-}
-
 // 固定費の検証・数値化
 export function usdSetting(value: string): number {
   if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(value)) {
     throw new Error('MONTHLY_FIXED_COST_USD は小数2桁までの非負のドル額を指定してください。');
   }
-  const amount = Number(value);
-  if (!Number.isSafeInteger(Math.round(amount * 100))) {
-    throw new Error('MONTHLY_FIXED_COST_USD が大きすぎます。');
-  }
-  return amount;
+  return Number(value);
 }
 
 // 現地の年月日を返す
