@@ -8,10 +8,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-manual-notification
-  cancel-in-progress: false
-
 jobs:
   notify:
     if: github.ref == 'refs/heads/main'

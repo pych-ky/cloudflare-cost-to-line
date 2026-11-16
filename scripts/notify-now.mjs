@@ -14,10 +14,6 @@ try {
   };
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
   const recipient = process.env.LINE_RECIPIENT_ID?.trim();
-  if (!token || !/^[UCR][a-f0-9]{32}$/i.test(recipient ?? "")) {
-    console.error(!token ? "LINE_CHANNEL_ACCESS_TOKEN が設定されていません。" : "LINE_RECIPIENT_ID の形式が不正です。");
-    throw new Error();
-  }
   const now = Date.now();
   const executionTime = new Intl.DateTimeFormat("ja-JP", {
     timeZone: env.TIME_ZONE, dateStyle: "short", timeStyle: "short",
@@ -50,6 +46,7 @@ try {
     await delay(60_000 * 2 ** attempts);
   }
 } catch {
+  // 個人設定を含みうる例外本文は記録しない
   console.error("手動通知失敗: production の設定を確認してください。");
   process.exitCode = 1;
 }
